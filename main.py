@@ -46,7 +46,7 @@ def run(data_dir, data_name, model, train_strategy, use_scheduler, criterion, ba
         lr, momentum):
 
     # load data
-    train_loader, test_loader = data.__dict__[data_name](data_dir)
+    train_loader, test_loader = data.__dict__[data_name](data_dir, batch_size)
 
     # load model
     model = models.__dict__[model]()
