@@ -53,7 +53,7 @@ class HighResCNN(nn.Module):
 class DenseNet169(nn.Module):
     def __init__(self, pretrained=True, num_outputs=2):
         super(DenseNet169, self).__init__()
-        self.dn = rue
+        self.dn = torch.hub.load('pytorch/vision:v0.9.0', 'densenet169', pretrained=pretrained)
         self.base = self.dn.features
         self.classifier = torch.nn.Linear(in_features=self.dn.classifier.in_features, out_features=num_outputs)
 
