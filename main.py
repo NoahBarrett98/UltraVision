@@ -1,33 +1,8 @@
-"""
-main function:
-
-components:
-
-data set
-    - name
-    - directory
-
-training strategy:
-    - model
-    - scheduler
-    - criterion
-    - train_loader
-        - batch size
-    - num_epochs
-    - optimizer
-        - lr
-        - momentum
-        - weight decay
-    - loss
-
-evaluation strategy
-"""
 import click
 import torch
 
 import data
 import models
-import losses
 import train
 import evaluation
 import optimizers
@@ -46,7 +21,7 @@ def run(data_dir, data_name, model, train_strategy, use_scheduler, criterion, ba
         lr, momentum):
 
     # load data
-    train_loader, test_loader = data.__dict__[data_name](data_dir)
+    train_loader, test_loader = data.__dict__[data_name](data_dir, batch_size)
 
     # load model
     model = models.__dict__[model]()
@@ -59,6 +34,7 @@ def run(data_dir, data_name, model, train_strategy, use_scheduler, criterion, ba
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[200], gamma=0.5)
     else:
         scheduler = None
+
     # train model
     model = train.__dict__[train_strategy](model, optimizer, scheduler, criterion, train_loader, num_epochs)
 
