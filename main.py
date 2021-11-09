@@ -60,7 +60,7 @@ def runSciLearn(data_dir, data_name, testSize, resizeX, resizeY):
     X_train = CustomTransforms.NP_GrayScale(X_train)
     X_test = CustomTransforms.NP_GrayScale(X_test)
     Y_train = CustomTransforms.NP_GrayScale(Y_train)
-    Y_train = CustomTransforms.NP_GrayScale(Y_test)
+    Y_test = CustomTransforms.NP_GrayScale(Y_test)
 
     knn = models.KNN(X_train, Y_train)
     svc = models.SVC(X_train, Y_train)
