@@ -1,38 +1,14 @@
-"""
-main function:
-
-components:
-
-data set
-    - name
-    - directory
-
-training strategy:
-    - model
-    - scheduler
-    - criterion
-    - train_loader
-        - batch size
-    - num_epochs
-    - optimizer
-        - lr
-        - momentum
-        - weight decay
-    - loss
-
-evaluation strategy
-"""
 import click
 import torch
 
 import data
 import models
-import losses
 import train
 import evaluation
 import optimizers
 
 @click.command()
+@click.option('--label_dir', default='', help='label location')
 @click.option('--data_dir', default='', help='data folder')
 @click.option('--data_name', default='', help='name of dataset')
 @click.option('--model', default='', help='name of model')
@@ -42,14 +18,14 @@ import optimizers
 @click.option('--num_epochs', default=100, help='number of epochs')
 @click.option('--lr', default=0.01, help='optimizer learning rate')
 @click.option('--momentum', default=0.5, help='optimizer momentum')
-def run(data_dir, data_name, model, train_strategy, use_scheduler, criterion, batch_size, num_epochs,
+def run(label_dir, data_dir, data_name, model, train_strategy, use_scheduler, criterion, batch_size, num_epochs,
         lr, momentum):
 
     # load data
-    train_loader, test_loader = data.__dict__[data_name](data_dir, batch_size)
+    train_loader, test_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir, batch_size)
 
     # load model
-    model = models.__dict__[model]()
+    model = models.__dict__[model](num_outputs)
 
     # get optimizer
     optimizer = optimizers.__dict__[optimizers](model.params, lr, momentum)
@@ -59,11 +35,15 @@ def run(data_dir, data_name, model, train_strategy, use_scheduler, criterion, ba
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[200], gamma=0.5)
     else:
         scheduler = None
+
     # train model
-    model = train.__dict__[train_strategy](model, optimizer, scheduler, criterion, train_loader, num_epochs)
+    model = train.__dict__[train_strategy](model, optimizer, scheduler,
+                                           criterion, train_loader,
+                                           val_loader, num_epochs,
+                                           num_epochs)
 
     # evaluate model
-    eval_results = evaluation.evaluate(model, test_loader)
+    eval_results = evaluation.evaluate(model, test_loader, train_strategy)
     pass
 
 if __name__ == "__main__":
