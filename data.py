@@ -52,7 +52,11 @@ def FetalPlanes_numpy(directoryxlsx,
         img.close()
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=val_size, random_state=42)
     return imagenames, imagelocs, imagearrays, planesout, X_test, X_train, X_val, y_train, y_test, y_val
-
+class FetalPlanesTransform:
+  def __init__(self):
+    self.train = None
+    self.test = None
+   
 class FetalPlaneDataset(Dataset):
     # initalize data and import data
     def __init__(self, img_array, label_array):
@@ -71,9 +75,11 @@ class FetalPlaneDataset(Dataset):
 
 def FetalPlanes(directoryxlsx, directoryimg, val_size, batch_size):
     imagenames, imagelocs, imagearrays, planesout, X_test, X_train, X_val, y_train, y_test, y_val = FetalPlanes_numpy(directoryxlsx, directoryimg, val_size)
-    train_dataset = FetalPlaneDataset(X_train, y_train)
-    test_dataset = FetalPlaneDataset(X_test, y_test)
-    val_dataset = FetalPlaneDataset(X_val, y_val)
+    
+    transform = FetalPlanesTransform()
+    train_dataset = FetalPlaneDataset(X_train, y_train, transform.train)
+    test_dataset = FetalPlaneDataset(X_test, y_test, transform.test)
+    val_dataset = FetalPlaneDataset(X_val, y_val, transform.test)
 
     train_loader = torch.utils.data.Dataloader(train_dataset, batch_size)
     test_loader = torch.utils.data.Dataloader(test_dataset, batch_size)
