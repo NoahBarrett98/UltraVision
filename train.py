@@ -31,7 +31,7 @@ def train_simclr(model, optimizer, scheduler, criterion, train_loader, num_epoch
 
         return model
 
-def train_classification(model, optimizer, scheduler, criterion, train_loader, val_loader, num_epochs, writer,
+def train_classification(model, optimizer, scheduler, criterion, train_loader, val_loader, num_epochs,
                          num_outputs):
     pbar = tqdm.tqdm(range(num_epochs))
 
@@ -61,13 +61,4 @@ def train_classification(model, optimizer, scheduler, criterion, train_loader, v
         if epoch % 10 == 0 or epoch == num_epochs - 1:
             train_results = evaluation.evaluate(model, train_loader, verbose=False, num_outputs=num_outputs)
             val_results = evaluation.evaluate(model, val_loader, verbose=False, num_outputs=num_outputs)
-
-            if writer:
-                writer.add_scalar('loss/train', running_loss / len(train_loader), epoch)
-                writer.add_scalar('accuracy/train', train_results['accuracy'], epoch)
-                writer.add_scalar('auc/train', train_results['auc'], epoch)
-                writer.add_scalar('loss/val', val_running_loss / len(val_loader), epoch)
-                writer.add_scalar('accuracy/val', val_results['accuracy'], epoch)
-                writer.add_scalar('auc/val', val_results['auc'], epoch)
-
     return model

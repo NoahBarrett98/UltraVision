@@ -8,3 +8,6 @@ def evaluate_simclr(model, test_loader):
     model.eval()
 
 
+
+
+

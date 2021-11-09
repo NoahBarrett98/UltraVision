@@ -7,6 +7,7 @@ import pandas as pd
 import os
 import torch
 from PIL import Image
+import PIL
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 from torchvision import transforms
@@ -98,11 +99,10 @@ def FetalPlanes(directoryxlsx, directoryimg, val_size, batch_size):
 def FetalPlanes_numpy(directoryxlsx,
                       directoryimg, val_size):
     """
-
-        :param directoryxlsx:
-        :param directoryimg:
-        :return: train, test data
-        """
+    :param directoryxlsx:
+    :param directoryimg:
+    :return: train, test data
+    """
     df = pd.read_excel(directoryxlsx)
 
     # creating empty arrays for the desired outputs
@@ -183,9 +183,9 @@ def FetalPlanes(directoryxlsx, directoryimg, val_size, batch_size):
     """
 
 
-def load_CheXpert(label_dir, data_dir, batch_size, split_seed=10, validation_split=None, use_og_split=True,
+def CheXpert(label_dir, data_dir, batch_size, split_seed=10, validation_split=None, use_og_split=True,
                   problem_type="Binary",
-                  one_channel=True, sample_strategy=None):
+                  train_strategy="train_classification" ):
     """
     load train and test loaders from fetal planes ds
     """
@@ -199,19 +199,26 @@ def load_CheXpert(label_dir, data_dir, batch_size, split_seed=10, validation_spl
         train = ""
 
     # transforms for dataloaders #
-    transforms = CXTransformations(one_channel=one_channel)
-    train_transform = transforms.train
-    test_transform = transforms.test
+    if train_strategy=="train_classification":
+        transforms = CXTransformations()
+        train_transform = transforms.train
+        test_transform = transforms.test
+    elif train_strategy == "train_simclr":
+        transforms = ContrastiveLearningViewGenerator()
+        train_transform = transforms
+        test_transform = transforms
+
     train_set = CheXpertDataset(train_csv, data_dir, train_transform, problem_type)
     test_set = CheXpertDataset(test_csv, data_dir, test_transform, problem_type)
     num_classes = train_set.num_classes
 
     # split val and train
     if validation_split:
-        train_set, val_set = sklearn.model_selection.train_test_split(
+        train_set, val_set = train_test_split(
             train_set, shuffle=True, test_size=validation_split, random_state=split_seed)
     else:
         val_loader = None
+
     # make dataloader #
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=2)
@@ -235,7 +242,6 @@ class CXTransformations:
             transforms.RandomAffine(10),
             transforms.ToTensor(),
             transforms.Normalize(*normalize)
-
         ]
         )
         self.test = transforms.Compose([
@@ -266,7 +272,7 @@ class CheXpertDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         filename = self.csv_f["Path"][index]
         label = self.csv_f[self.class_key][index]
-        image = PIL.Image.open(path.join(self.data_dir, filename))
+        image = PIL.Image.open(os.path.join(self.data_dir, filename))
         if self.transform is not None:
             image = self.transform(image)
 
@@ -276,3 +282,68 @@ class CheXpertDataset(torch.utils.data.Dataset):
         }
         return data
 
+class GaussianBlur(object):
+    """blur a single image on CPU"""
+    def __init__(self, kernel_size):
+        radias = kernel_size // 2
+        kernel_size = radias * 2 + 1
+        self.blur_h = torch.nn.Conv2d(3, 3, kernel_size=(kernel_size, 1),
+                                stride=1, padding=0, bias=False, groups=3)
+        self.blur_v = torch.nn.Conv2d(3, 3, kernel_size=(1, kernel_size),
+                                stride=1, padding=0, bias=False, groups=3)
+        self.k = kernel_size
+        self.r = radias
+
+        self.blur = torch.nn.Sequential(
+            torch.nn.ReflectionPad2d(radias),
+            self.blur_h,
+            self.blur_v
+        )
+
+        self.pil_to_tensor = transforms.ToTensor()
+        self.tensor_to_pil = transforms.ToPILImage()
+
+    def __call__(self, img):
+        img = self.pil_to_tensor(img).unsqueeze(0)
+
+        sigma = np.random.uniform(0.1, 2.0)
+        x = np.arange(-self.r, self.r + 1)
+        x = np.exp(-np.power(x, 2) / (2 * sigma * sigma))
+        x = x / x.sum()
+        x = torch.from_numpy(x).view(1, -1).repeat(3, 1)
+
+        self.blur_h.weight.data.copy_(x.view(3, 1, self.k, 1))
+        self.blur_v.weight.data.copy_(x.view(3, 1, 1, self.k))
+
+        with torch.no_grad():
+            img = self.blur(img)
+            img = img.squeeze()
+
+        img = self.tensor_to_pil(img)
+
+        return img
+
+class SimCLRTransformations:
+    def __init__(self, size=96, s=1):
+        self.color_jitter = transforms.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s)
+        self.transform = transforms.Compose([transforms.ToTensor(), #nparray2tensor
+                                                 transforms.ToPILImage(), # topilimage
+                                                 transforms.Grayscale(num_output_channels=1), # grayscale
+                                                 transforms.Grayscale(num_output_channels=3),
+                                                  transforms.RandomResizedCrop(size=size),
+                                                  transforms.RandomHorizontalFlip(),
+                                                  transforms.RandomApply([self.color_jitter], p=0.8),
+                                                  transforms.RandomGrayscale(p=0.2),
+                                                  GaussianBlur(kernel_size=int(0.1 * size)),
+                                                  transforms.ToTensor()])
+
+
+class ContrastiveLearningViewGenerator(object):
+    """Take two random crops of one image as the query and key."""
+
+    def __init__(self, n_views=2):
+        self.base_transform = SimCLRTransformations().transform
+        self.n_views = n_views
+
+    def __call__(self, x):
+        return [self.base_transform(x) for i in range(self.n_views)]
