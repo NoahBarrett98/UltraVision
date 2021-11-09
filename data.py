@@ -9,6 +9,8 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
+from torchvision import transforms
+import transforms as T
 
 def FetalPlanes_numpy(directoryxlsx,
                     directoryimg, val_size):
@@ -52,23 +54,24 @@ def FetalPlanes_numpy(directoryxlsx,
         img.close()
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=val_size, random_state=42)
     return imagenames, imagelocs, imagearrays, planesout, X_test, X_train, X_val, y_train, y_test, y_val
+
 class FetalPlanesTransform:
+
   def __init__(self):
-    self.train = None
-    self.test = None
+    self.train = torchvision.transform.Compose(T.Greyscale(), T.GaussianBlur(kernel_size=(5,9), sigma(0.1,5)),
+                                               T.RandomPerspective(),T.RandomRotation(degrees = (0,360)),
+                                               T.CenterCrop(size=(224,224)),T.ToTensor())
+    self.test = torchvision.transform.Compose(T.Greyscale(), T.CenterCrop(size=(224,224)), T.ToTensor())
    
 class FetalPlaneDataset(Dataset):
     # initalize data and import data
     def __init__(self, img_array, label_array):
-        # FetalPlanes_numpy(directoryxlsx, directoryimg, val_size)
-        # self.output_data = torch.as_tensor(planesout)
-        # self.feat_data = torch.as_tensor(imagearrays)
         self.img_array = img_array
         self.label_array = label_array
         self.len = label_array.shape[0]
 
     def __getitem__(self, index):
-        return self.img_array[index], self.label_array[index]
+        return transform(self.img_array[index]), self.label_array[index]
 
     def __len__(self):
         return self.len
