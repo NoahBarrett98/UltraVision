@@ -1,5 +1,6 @@
 import click
 import torch
+import pandas as p
 
 import data
 import models
@@ -44,6 +45,31 @@ def run(label_dir, data_dir, data_name, model, train_strategy, use_scheduler, cr
 
     # evaluate model
     eval_results = evaluation.evaluate(model, test_loader, train_strategy)
+    pass
+
+def runSciLearn(data_dir, data_name, testSize, resizeX, resizeY):
+    channels = 3  # RGB
+    imagenames, imagelocs, imagearrays, planesout, X_test, X_train, X_val, Y_train, Y_test, Y_val = data.FetalPlanes_numpy(
+        data_dir, dataname, testSize)
+
+    X_train = CustomTransforms.NP_Resize(X_train, resizeX, resizeY, channels)
+    X_test = CustomTransforms.NP_Resize(X_test, resizeX, resizeY, channels)
+    Y_train = CustomTransforms.NP_Resize(Y_train, resizeX, resizeY, channels)
+    Y_test = CustomTransforms.NP_Resize(Y_test, resizeX, resizeY, channels)
+
+    X_train = CustomTransforms.NP_GrayScale(X_train)
+    X_test = CustomTransforms.NP_GrayScale(X_test)
+    Y_train = CustomTransforms.NP_GrayScale(Y_train)
+    Y_train = CustomTransforms.NP_GrayScale(Y_test)
+
+    knn = models.KNN(X_train, Y_train)
+    svc = models.SVC(X_train, Y_train)
+    gnb = models.GNaiveBayes(X_train, Y_train)
+
+    knnClassReport = p.dataFrame(models.PredictAndClass(knn, X_test, Y_test))
+    svcClassReport = p.dataFrame(models.PredictAndClass(svc, X_test, Y_test))
+    gnbClassReport = p.dataFrame(models.PredictAndClass(gnb, X_test, Y_test))
+
     pass
 
 if __name__ == "__main__":
