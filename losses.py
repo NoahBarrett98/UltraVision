@@ -12,14 +12,18 @@ class NT_Xent(nn.Module):
     def forward(self, z_i, z_j):
         """
         implementation adapted from https://github.com/leftthomas/SimCLR
-        :param z_i: image 1
-        :param z_j: image 2
+        :param z_i: image latent 1
+        :param z_j: image latent 2
         :return:
         """
         # [2*B, D]
         out = torch.cat([z_i, z_j], dim=0)
-        # [2*B, 2*B]
+        # sim(z_i, z_j)/t
         sim_matrix = torch.exp(torch.mm(out, out.t().contiguous()) / self.temperature)
+        # matrix for 1 E {0,1} function, e.g.
+        # 0 1 1
+        # 1 0 1
+        # 1 1 0
         mask = (torch.ones_like(sim_matrix) - torch.eye(2 * self.batch_size, device=sim_matrix.device)).bool()
         # [2*B, 2*B-1]
         sim_matrix = sim_matrix.masked_select(mask).view(2 * self.batch_size, -1)
