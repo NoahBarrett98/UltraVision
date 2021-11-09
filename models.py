@@ -120,18 +120,32 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn import svm
 from sklearn.naive_bayes import GaussianNB
 
+
 # KNearestNeighbors
-def KNN():
+def KNN(X_train, Y_train):
     knn = KNeighborsClassifier()
+    knn.fit(X_train, Y_train)
     return knn
+
 
 # SVC
 # Images for SVC/SVM must be the same dimensions
-def SVC():
+def SVC(X_train, Y_train):
     svc = svm.SVC(probability=True)
+    svc.fit(X_train, Y_train)
     return svc
 
-#Gaussian Naive Bayes
-def GNaiveBayes():
+
+# Gaussian Naive Bayes
+def GNaiveBayes(X_train, Y_train):
     gnb = GaussianNB()
+    gnb.fit(X_train, Y_train)
     return gnb
+
+
+# Predict model
+def PredictAndClass(model, X_test, Y_test):
+    predictions = model.predict(X_test)
+    report = classification_report(Y_test, predictions, output_dict=True)
+    return report
+
