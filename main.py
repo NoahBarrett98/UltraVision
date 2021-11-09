@@ -42,5 +42,6 @@ def run(data_dir, data_name, model, train_strategy, use_scheduler, criterion, ba
     eval_results = evaluation.evaluate(model, test_loader)
     pass
 
+
 if __name__ == "__main__":
     run()
