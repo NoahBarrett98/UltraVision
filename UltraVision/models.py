@@ -7,7 +7,7 @@ class HighResCNN(nn.Module):
     """
     model built to read in full sized images
     """
-    def __init__(self):
+    def __init__(self, num_outputs):
         super(HighResCNN, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, kernel_size=(3,3), stride=(2,2), bias=True)
         self.pool1 = nn.MaxPool2d(kernel_size= (3,3), stride=(3,3))
