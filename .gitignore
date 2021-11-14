@@ -1,2 +1,3 @@
-UltraVision/__pycache
-*egg*
+
+**/__pycache__/
+**/egg.*/
