@@ -1,9 +1,0 @@
-README.md
-setup.py
-UltraVision.egg-info/PKG-INFO
-UltraVision.egg-info/SOURCES.txt
-UltraVision.egg-info/dependency_links.txt
-UltraVision.egg-info/entry_points.txt
-UltraVision.egg-info/not-zip-safe
-UltraVision.egg-info/requires.txt
-UltraVision.egg-info/top_level.txt
