@@ -3,7 +3,7 @@ export CUDA_VISIBLE_DEVICES=0
 train_model --label_dir /home/noah/data/FETAL_PLANES_ZENODO/FETAL_PLANES_DB_data.csv \
                --data_dir /home/noah/data/FETAL_PLANES_ZENODO/Images \
                --data_name FetalPlanes \
-               --model ResNet18 \
+               --model_name ResNet18 \
                --train_strategy train_classification \
                --use_scheduler True \
                --batch_size 1 \

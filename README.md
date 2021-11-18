@@ -9,6 +9,7 @@ This project is set up as a python package to install
 conda create --name UltraVision python=3.9
 cd path/to/UltraVision
 pip install -e .
+conda install protobuf
 ```
 
 ## running experiment
