@@ -2,14 +2,15 @@ import torch
 import tqdm
 
 from UltraVision import evaluation
+from UltraVision import losses
 
-def train_simclr(model, optimizer, scheduler, criterion, train_loader, num_epochs):
+def train_simclr(model, optimizer, scheduler, train_loader, val_loader,  num_epochs, writer):
     """
     train a model using the framework proposed in
     https://arxiv.org/pdf/2002.05709.pdf
 
     """
-
+    criterion = losses.NT_Xent(train_loader.batch_size, temperature=0.1)
     pbar = tqdm.tqdm(range(num_epochs))
     model.train()
     # training
@@ -35,7 +36,7 @@ def train_simclr(model, optimizer, scheduler, criterion, train_loader, num_epoch
 def train_classification(model, optimizer,
                         scheduler,  train_loader,
                            val_loader, num_epochs,
-                           writer, num_outputs):
+                           writer):
     pbar = tqdm.tqdm(range(num_epochs))
     # CE for classification
     criterion = torch.nn.CrossEntropyLoss()
