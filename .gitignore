@@ -2,5 +2,6 @@
 /UltraVision/UltraVision.egg-info/
 /UltraVision/mlruns/
 /UltraVision/tensorboard/
-/tensorboard/
-/mlruns/
+tensorboard/
+mlruns/
+UltraVision.egg-info/
