@@ -38,11 +38,9 @@ def FetalPlanes_numpy(csv_f,
     y_train = []
     y_test = []
 
-# This section is iterating through the imiage data to convert it into numerical data and creating the train, test, val
-# datasets to be used in our models
+    # This section is iterating through the imiage data to convert it into numerical data and creating the train, test, val
+    # datasets to be used in our models
     for i, row in tqdm(df.iterrows(), desc='loading data'):
-        if i ==10:
-            break
         imgname = df.at[i, 'Image_name'] + '.png'
         imgloc = os.path.join(directoryimg, imgname)
         img = Image.open(imgloc)
@@ -60,7 +58,9 @@ def FetalPlanes_numpy(csv_f,
         imagearrays.append(array)
         planesout.append(output)
         img.close()
+
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=val_size, random_state=42)
+
     return imagenames, imagelocs, imagearrays, planesout, X_test, X_train, X_val, y_train, y_test, y_val
 
 class FetalPlanesTransform:

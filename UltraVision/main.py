@@ -1,12 +1,17 @@
 import click
 import torch
-import pandas as p
+import pandas as pd
+import mlflow
+import os
+from tensorboardX import SummaryWriter
+from datetime import datetime
 
 from UltraVision import data
 from UltraVision import models
 from UltraVision import train
 from UltraVision import evaluation
 from UltraVision import optimizers
+from UltraVision import utils
 
 @click.command()
 @click.option('--label_dir', default='', help='label location')
@@ -20,19 +25,33 @@ from UltraVision import optimizers
 @click.option('--val_size', default=0.1, type=float, help='validation split size')
 @click.option('--lr', default=0.01, type=float, help='optimizer learning rate')
 @click.option('--momentum', default=0.5, type=float, help='optimizer momentum')
-@click.option('--optimizer', default='SGD', help='optimizer momentum')
+@click.option('--optimizer_name', default='SGD', help='optimizer momentum')
+@click.option('--exp_name', default=None, help='name of experiment')
+@click.option('--use_tensorboard', default=True,type=bool, help='wether to use tensorboard or not')
 def train_model(label_dir, data_dir, data_name, model, train_strategy, use_scheduler, batch_size, val_size, num_epochs,
-        lr, momentum, optimizer):
+        lr, momentum, optimizer_name, exp_name, use_tensorboard):
+
+    # start mlflow experiment
+    mlflow.set_experiment(exp_name)
+
+    # setup tensorboard
+    if use_tensorboard:
+        if not os.path.exists("tensorboard"):
+            os.makedirs("tensorboard")
+        tensorboard_location = os.path.join("tensorboard", f'{exp_name}_{datetime.now().strftime("%Y%m%d_%H:%M")}')
+        writer = SummaryWriter(tensorboard_location)
+    else:
+        tensorboard_location = "None"
+        writer = None
 
     # load data
     train_loader, test_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir,
                                                                                   val_size, batch_size)
-
     # load model
-    model = models.__dict__[model](num_outputs)
+    model = models.__dict__[model](pretrained=True, num_outputs=num_outputs)
     model = model.cuda()
     # get optimizer
-    optimizer = optimizers.__dict__[optimizer](model, lr, momentum)
+    optimizer = optimizers.__dict__[optimizer_name](model, lr, momentum)
 
     # set scheduler
     if use_scheduler:
@@ -44,9 +63,27 @@ def train_model(label_dir, data_dir, data_name, model, train_strategy, use_sched
     model = train.__dict__[train_strategy](model=model, optimizer=optimizer,
                                         scheduler=scheduler,  train_loader=train_loader,
                                            val_loader=val_loader, num_epochs=num_epochs,
-                                           writer=None, num_outputs=num_outputs)
+                                           writer=writer
+                                           , num_outputs=num_outputs)
     # evaluate model
     eval_results = evaluation.evaluate(model, test_loader, train_strategy)
+
+    with mlflow.start_run():
+        mlflow.log_param("data_name", data_name)
+        mlflow.log_param("model", model)
+        mlflow.log_param("train_strategy", train_strategy)
+        mlflow.log_param("use_scheduler", use_scheduler)
+        mlflow.log_param("batch_size", batch_size)
+        mlflow.log_param("val_size", val_size)
+        mlflow.log_param("num_epochs", num_epochs)
+        mlflow.log_param("lr", lr)
+        mlflow.log_param("momentum", momentum)
+        mlflow.log_param("optimizer", optimizer_name)
+        mlflow.log_param("tboard loc", tensorboard_location)
+        import pdb;pdb.set_trace()
+        mlflow.log_metric("auc", eval_results["auc"])
+        mlflow.log_metric("accuracy", eval_results["accuracy"])
+
     return model
 
 @click.command()

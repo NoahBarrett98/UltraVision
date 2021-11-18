@@ -26,7 +26,8 @@ setup(name='UltraVision',
         'torch==1.8.1',
         "seaborn",
         "torchvision",
-        'tqdm==4.50.2'
+        'tqdm==4.50.2',
+        'mlflow'
       ],
       entry_points={
           'console_scripts': [

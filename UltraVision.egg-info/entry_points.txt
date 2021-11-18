@@ -1,0 +1,4 @@
+[console_scripts]
+train_baselines = UltraVision.main.runSciLearn
+train_model = UltraVision.main:train_model
+
