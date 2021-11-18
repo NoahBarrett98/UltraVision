@@ -28,8 +28,9 @@ from UltraVision import utils
 @click.option('--optimizer_name', default='SGD', help='optimizer momentum')
 @click.option('--exp_name', default=None, help='name of experiment')
 @click.option('--use_tensorboard', default=True,type=bool, help='wether to use tensorboard or not')
+@click.option('--save_model_dir', default=None, type=str, help='path to save model')
 def train_model(label_dir, data_dir, data_name, model_name, train_strategy, use_scheduler, batch_size, val_size, num_epochs,
-        lr, momentum, optimizer_name, exp_name, use_tensorboard):
+        lr, momentum, optimizer_name, exp_name, use_tensorboard, save_model_dir):
 
     # start mlflow experiment
     mlflow.set_experiment(exp_name)
@@ -83,6 +84,10 @@ def train_model(label_dir, data_dir, data_name, model_name, train_strategy, use_
         mlflow.log_metric("auc", eval_results["auc"])
         mlflow.log_metric("accuracy", eval_results["accuracy"])
 
+    if save_model_dir:
+        custom_models.save_model(model, save_model_dir)
+        print(f'model saved to: {save_model_dir}')
+        
     return model
 
 @click.command()

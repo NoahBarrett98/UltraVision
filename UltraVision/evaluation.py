@@ -39,7 +39,6 @@ def evaluate_classification(model, test_loader):
     print("Confusion Matrix: ")
     print(confusion_matrix(y_true, y_pred))
 
-    
     return report
 
 def evaluate_simclr(model, test_loader):
