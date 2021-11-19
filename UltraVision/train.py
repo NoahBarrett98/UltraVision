@@ -77,3 +77,39 @@ def train_classification(model, optimizer,
                 writer.add_scalar('auc/val', val_results['auc'], epoch)
 
     return model
+
+
+def train_classification_tune(model, optimizer,
+                        scheduler,  train_loader,
+                           val_loader, num_epochs, writer):
+    pbar = tqdm.tqdm(range(num_epochs))
+    # CE for classification
+    criterion = torch.nn.CrossEntropyLoss()
+    # training
+    for epoch in pbar:
+        running_loss = 0.0
+        for i, (inputs, labels) in enumerate(train_loader, 0):
+            # put on gpu
+            inputs, labels = inputs.cuda(), labels.cuda()
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        if scheduler:
+            scheduler.step()
+        # get validation loss #
+        with torch.no_grad():
+            val_running_loss = 0.0
+            for i, (inputs, labels) in enumerate(val_loader, 0):
+                inputs, labels = inputs.cuda(), labels.cuda()
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                val_running_loss += loss.item()
+        pbar.set_description(f"Loss: {running_loss / len(train_loader):.6f}")
+        print(f"running loss: {running_loss}")
+
+        with tune.checkpoint_dir(epoch) as checkpoint_dir:
+            path = os.path.join(checkpoint_dir, "checkpoint")
+            torch.save((model.state_dict(), optimizer.state_dict()), path)

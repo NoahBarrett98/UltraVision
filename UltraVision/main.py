@@ -5,6 +5,10 @@ import mlflow
 import os
 from tensorboardX import SummaryWriter
 from datetime import datetime
+from ray import tune
+from ray.tune import CLIReporter
+from ray.tune.schedulers import ASHAScheduler
+from functools import partial
 
 from UltraVision import data
 from UltraVision import models
@@ -12,6 +16,35 @@ from UltraVision import train
 from UltraVision import evaluation
 from UltraVision import optimizers
 from UltraVision import utils
+
+def run_train_session(label_dir, data_dir, data_name, model_name, train_strategy, use_scheduler, batch_size, val_size, num_epochs,
+        lr, momentum, optimizer_name):
+
+    # load data
+    train_loader, test_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir,
+                                                                                  val_size, batch_size)
+    # load model
+    model = models.__dict__[model_name](pretrained=True, num_outputs=num_outputs)
+    model = model.cuda()
+    # get optimizer
+    optimizer = optimizers.__dict__[optimizer_name](model, lr, momentum)
+
+    # set scheduler
+    if use_scheduler:
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[200], gamma=0.5)
+    else:
+        scheduler = None
+
+    # train model
+    model = train.__dict__[train_strategy](model=model, optimizer=optimizer,
+                                           scheduler=scheduler, train_loader=train_loader,
+                                           val_loader=val_loader, num_epochs=num_epochs,
+                                           writer=writer
+                                           , num_outputs=num_outputs)
+    # evaluate model
+    eval_results = evaluation.evaluate(model, test_loader, train_strategy)
+
+    return eval_results, model
 
 @click.command()
 @click.option('--label_dir', default='', help='label location')
@@ -32,9 +65,6 @@ from UltraVision import utils
 def train_model(label_dir, data_dir, data_name, model_name, train_strategy, use_scheduler, batch_size, val_size, num_epochs,
         lr, momentum, optimizer_name, exp_name, use_tensorboard, save_model_dir):
 
-    # start mlflow experiment
-    mlflow.set_experiment(exp_name)
-
     # setup tensorboard
     if use_tensorboard:
         if not os.path.exists("tensorboard"):
@@ -45,30 +75,13 @@ def train_model(label_dir, data_dir, data_name, model_name, train_strategy, use_
         tensorboard_location = "None"
         writer = None
 
-    # load data
-    train_loader, test_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir,
-                                                                                  val_size, batch_size)
-    # load model
-    model = models.__dict__[model_name](pretrained=True, num_outputs=num_outputs)
-    model = model.cuda()
-    # get optimizer
-    optimizer = optimizers.__dict__[optimizer_name](model, lr, momentum)
-
-    # set scheduler
-    if use_scheduler:
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[200], gamma=0.5)
-    else:
-        scheduler = None
-
+    # setup mlflow experiment
+    mlflow.set_experiment(exp_name)
     # train model
-    model = train.__dict__[train_strategy](model=model, optimizer=optimizer,
-                                        scheduler=scheduler,  train_loader=train_loader,
-                                           val_loader=val_loader, num_epochs=num_epochs,
-                                           writer=writer
-                                           , num_outputs=num_outputs)
-    # evaluate model
-    eval_results = evaluation.evaluate(model, test_loader, train_strategy)
-
+    eval_results, model = run_train_session(label_dir, data_dir, data_name, model_name, train_strategy, use_scheduler, batch_size, val_size,
+                                              num_epochs,
+                                              lr, momentum, optimizer_name)
+    # mlflow logging
     with mlflow.start_run():
         mlflow.log_param("data_name", data_name)
         mlflow.log_param("model", model_name)
@@ -84,11 +97,87 @@ def train_model(label_dir, data_dir, data_name, model_name, train_strategy, use_
         mlflow.log_metric("auc", eval_results["auc"])
         mlflow.log_metric("accuracy", eval_results["accuracy"])
 
+    # save model
     if save_model_dir:
         custom_models.save_model(model, save_model_dir)
         print(f'model saved to: {save_model_dir}')
-        
-    return model
+
+def search_step(label_dir, data_dir, data_name,
+                      model_name, use_scheduler,
+                      batch_size, val_size, num_epochs,
+                      optimizer_name, config, checkpoint_dir=None):
+    """
+    search function for raytune hparam search
+    :param label_dir:
+    :param data_dir:
+    :param data_name:
+    :param model_name:
+    :param use_scheduler:
+    :param batch_size:
+    :param val_size:
+    :param num_epochs:
+    :param optimizer_name:
+    :param config:
+    :param checkpoint_dir:
+    :return:
+    """
+    eval_results, model = run_train_session(label_dir=label_dir, data_dir=data_dir, data_name=data_name,
+                          model_name=model_name, use_scheduler=use_scheduler,
+                          batch_size=batch_size, val_size=val_size, num_epochs=num_epochs,
+                          optimizer_name=optimizer_name, train_strategy="train_classification_tune",
+                      lr=config["lr"], momentum=config["momentum"])
+
+    tune.report(loss=eval_results["loss"], accuracy=eval_results["accuracy"], auc=eval_results["auc"])
+
+@click.command()
+@click.option('--label_dir', default='', help='label location')
+@click.option('--data_dir', default='', help='data folder')
+@click.option('--data_name', default='', help='name of dataset')
+@click.option('--model_name', default='', help='name of model')
+@click.option('--use_scheduler', default=True, help='whether to use scheduler')
+@click.option('--batch_size', default=8, type=int, help='batch size for dataloaders')
+@click.option('--num_epochs', default=100, type=int, help='number of epochs')
+@click.option('--val_size', default=0.1, type=float, help='validation split size')
+@click.option('--optimizer_name', default='SGD', help='optimizer momentum')
+@click.option('--num_trials', default=10,type=int, help='number of trials')
+def hparam_search_wrapper(label_dir, data_dir, data_name, model_name, use_scheduler, batch_size, num_epochs, val_size,
+                          optimizer_name, num_trials):
+    config = {
+        "lr": tune.loguniform(1e-4, 1e-1),
+        "momentum": tune.loguniform(0.5, 0.9)
+    }
+
+    scheduler = ASHAScheduler(
+        metric="loss",
+        mode="min",
+        max_t=num_epochs,
+        grace_period=1,
+        reduction_factor=2)
+    reporter = CLIReporter(
+        metric_columns=["loss", "accuracy", "auc", "training_iteration"])
+    # run tuning experiment
+    def train_func(config, checkpoint_dir):
+        search_step(label_dir=label_dir, data_dir=data_dir, data_name=data_name,
+                                      model_name=model_name, use_scheduler=use_scheduler,
+                                      batch_size=batch_size, val_size=val_size, num_epochs=num_epochs,
+                                      optimizer_name=optimizer_name, config=config, checkpoint_dir=checkpoint_dir)
+    result = tune.run(
+        train_func,
+        resources_per_trial={ "cpu": 8, "gpu": 1},
+        config=config,
+        num_samples=num_trials,
+        scheduler=scheduler,
+        progress_reporter=reporter
+    )
+
+    best_trial = result.get_best_trial("loss", "min", "last")
+    print("Best trial config: {}".format(best_trial.config))
+    print("Best trial final validation loss: {}".format(
+        best_trial.last_result["loss"]))
+    print("Best trial final validation accuracy: {}".format(
+        best_trial.last_result["accuracy"]))
+    print("Best trial final validation auc: {}".format(
+        best_trial.last_result["auc"]))
 
 @click.command()
 @click.option('--label_dir', default='', help='label location')

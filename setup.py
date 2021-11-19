@@ -32,7 +32,8 @@ setup(name='UltraVision',
       entry_points={
           'console_scripts': [
                 'train_model = UltraVision.main:train_model',
-                'train_baselines = UltraVision.main.runSciLearn'
+                'train_baselines = UltraVision.main:runSciLearn',
+                'hparam_search = UltraVision.main:hparam_search_wrapper'
           ]
       }
 )
