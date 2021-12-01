@@ -5,11 +5,11 @@ train_model --label_dir /home/noah/data/FETAL_PLANES_ZENODO/FETAL_PLANES_DB_data
                --data_name FetalPlanes \
                --model_name ResNet18 \
                --train_strategy train_classification \
-               --use_scheduler True \
+               --use_scheduler False \
                --batch_size 1 \
                --num_epochs  1 \
                --optimizer_name SGD \
-               --lr 0.0002 \
+               --lr 0.00977542  \
                --momentum 0.9 \
-               --exp_name testing \
+               --exp_name reproduce_dnet \
                --use_tensorboard True

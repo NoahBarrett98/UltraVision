@@ -7,8 +7,8 @@ def SGD(model, lr, momentum):
         {'params': model.classifier.parameters(), 'lr': lr}
     ], momentum=momentum)
 
-def Adam(model, lr, momentum):
+def Adam(model, lr, weight_decay):
     return optim.Adam([
         {'params': model.base.parameters(), 'lr':lr},
         {'params': model.classifier.parameters(), 'lr': lr}
-    ], momentum=momentum)
+    ], weight_decay=weight_decay)

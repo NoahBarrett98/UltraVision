@@ -10,7 +10,7 @@ from PIL import Image
 import PIL
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
-from torchvision import transforms as T
+from torchvision import transforms
 from tqdm import tqdm
 
 from torch.utils.data import Dataset
@@ -63,23 +63,57 @@ def FetalPlanes_numpy(csv_f,
 
     return imagenames, imagelocs, imagearrays, planesout, X_test, X_train, X_val, y_train, y_test, y_val
 
-class FetalPlanesTransform:
+# class FetalPlanesTransform:
+#
+#   def __init__(self):
+#     self.train = transforms.Compose([
+#                             transforms.ToPILImage(),
+#                             transforms.Grayscale(num_output_channels=1),  # grayscale
+#                             transforms.Grayscale(num_output_channels=3),
+#                             transforms.GaussianBlur(kernel_size=(5,9), sigma=(0.1,5)),
+#                             transforms.RandomPerspective(),T.RandomRotation(degrees = (0,360)),
+#                             T.CenterCrop(size=(224,224)),T.ToTensor()
+#     ])
+#     self.test = transforms.Compose([
+#                             transforms.ToPILImage(),
+#                             transforms.Grayscale(num_output_channels=1),  # grayscale
+#                             transforms.Grayscale(num_output_channels=3),
+#                             transforms.CenterCrop(size=(224,224)), T.ToTensor()
+#     ])
 
-  def __init__(self):
-    self.train = T.Compose([
-                            T.ToPILImage(),
-                            T.Grayscale(num_output_channels=1),  # grayscale
-                            T.Grayscale(num_output_channels=3),
-                            T.GaussianBlur(kernel_size=(5,9), sigma=(0.1,5)),
-                            T.RandomPerspective(),T.RandomRotation(degrees = (0,360)),
-                            T.CenterCrop(size=(224,224)),T.ToTensor()
-    ])
-    self.test = T.Compose([
-                            T.ToPILImage(),
-                            T.Grayscale(num_output_channels=1),  # grayscale
-                            T.Grayscale(num_output_channels=3),
-                            T.CenterCrop(size=(224,224)), T.ToTensor()
-    ])
+class FetalPlanesTransform:
+    """
+    Transformations from:
+    https://www.nature.com/articles/s41598-020-67076-5
+    """
+
+    def __init__(self, resize=(300, 400), crop=(224, 224),
+                 normalize=(-1, 1), one_channel=True):
+
+        self.train = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Grayscale(num_output_channels=1),
+            transforms.Resize(resize),
+            transforms.CenterCrop(crop),
+            # transforms.RandomResizedCrop(crop, scale=(0.08, 1.0)),
+            transforms.Grayscale(num_output_channels=3) if not one_channel else transforms.Lambda(lambda x: x),
+            transforms.RandomRotation(15),
+            transforms.RandomAffine(10),
+            transforms.ToTensor(),
+            transforms.Normalize(*normalize)
+        ]
+        )
+        self.test = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Grayscale(num_output_channels=1),
+            transforms.Resize(resize),
+            transforms.CenterCrop(crop),
+            transforms.Grayscale(num_output_channels=3) if not one_channel else transforms.Lambda(lambda x: x),
+            transforms.ToTensor(),
+            transforms.Normalize(*normalize)
+            # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        ]
+        )
    
 class FetalPlaneDataset(Dataset):
     # initalize data and import data
@@ -111,10 +145,135 @@ def FetalPlanes(directoryxlsx, directoryimg, val_size, batch_size):
     num_outputs = 6
     return train_loader, test_loader, val_loader, num_outputs
 
+
+class FPTransformations:
     """
-    
-    :return: train, test loader
+    Transformations from:
+    https://www.nature.com/articles/s41598-020-67076-5
     """
+    def __init__(self, resize=(300, 400), crop=(224, 224),
+                 normalize=((0, 0, 0), (1, 1, 1)), one_channel=True):
+        if one_channel:
+            normalize = (0, 1)
+        self.train = transforms.Compose([
+            transforms.Grayscale(num_output_channels=1),
+            transforms.Resize(resize),
+            transforms.CenterCrop(crop),
+            transforms.Grayscale(num_output_channels=3) if not one_channel else transforms.Lambda(lambda x: x),
+            transforms.RandomRotation(15),
+            transforms.RandomAffine(10),
+            transforms.ToTensor(),
+            transforms.Normalize(*normalize)
+        ]
+        )
+        self.test = transforms.Compose([
+            transforms.Grayscale(num_output_channels=1),
+            transforms.Resize(resize),
+            transforms.CenterCrop(crop),
+            transforms.Grayscale(num_output_channels=3) if not one_channel else transforms.Lambda(lambda x: x),
+            transforms.ToTensor(),
+            transforms.Normalize(*normalize)
+            # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        ]
+        )
+
+
+def FetalPlanes2(label_dir, data_dir, validation_split, batch_size, split_seed=10,  use_og_split=False, problem_type="MultiClass_FP",
+                         one_channel=True):
+    """
+    load train and test loaders from fetal planes ds
+    """
+    labels = pd.read_csv(label_dir, delimiter=";")
+    if use_og_split:
+        test_csv = labels[labels['Train '] == 0].reset_index()
+        train_csv = labels[labels['Train '] == 1].reset_index()
+    else:
+        # TODO: add splitting function
+        indexes = labels.index.tolist()
+        train_labels, test_labels = train_test_split(
+             indexes, shuffle=True, test_size=0.1, random_state=10)
+        test_csv = labels.iloc[test_labels, :].reset_index()
+        train_csv = labels.iloc[train_labels, :].reset_index()
+    # transforms for dataloaders
+    transforms = FPTransformations(one_channel=one_channel)
+    train_set = FetalPlanesDataset(train_csv, data_dir, transforms.train, problem_type)
+    test_set = FetalPlanesDataset(test_csv, data_dir, transforms.test, problem_type)
+    num_classes = train_set.num_classes
+
+
+    if validation_split:
+        # split val and train
+        train_set, val_set = train_test_split(
+            train_set, shuffle=True, test_size=validation_split, random_state=split_seed)
+    else:
+        val_loader = None
+    # make dataloader #
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=2)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=2)
+    val_loader = torch.utils.data.DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=2)
+    return train_loader, test_loader, val_loader,  num_classes
+
+class FetalPlanesDataset(torch.utils.data.Dataset):
+    def __init__(self, csv_f, data_dir, transform=None, problem_type="Binary_FP"):
+        self.csv_f = csv_f
+        self.data_dir = data_dir
+        self.transform = transform
+        if problem_type == "Binary_FP":
+            self.class_key = 'Brain_plane'
+            # load the labels as 1 for brain, 0 for not brain
+            self.class2index = {'Not A Brain': 0,
+                                'Other': 0,
+                                'Trans-thalamic': 1,
+                                'Trans-cerebellum': 1,
+                                'Trans-ventricular': 1,
+                                }
+            self.num_classes = 2
+
+        elif problem_type == "MultiClass_FP":
+            self.class_key = 'Plane'
+            self.class2index = {k: i for i, k in enumerate(self.csv_f[self.class_key].unique())}
+            self.num_classes = len(self.class2index.keys())
+
+        elif problem_type == "Brain_FP":
+            # remove all instances that are not brains
+            self.csv_f = self.csv_f[self.csv_f['Brain_plane'] != 'Not A Brain']
+            self.csv_f = self.csv_f[self.csv_f['Brain_plane'] != 'Other'].reset_index()
+            self.class_key = 'Brain_plane'
+            self.class2index = {k: i for i, k in enumerate(self.csv_f['Brain_plane'].unique())}
+            self.num_classes = len(self.class2index.keys())
+        # self._load_data()
+
+    # def _load_data(self):
+    #     self.imgs = []
+    #     self.labels = []
+    #     for i in range(len(self)):
+    #         # load img
+    #         filename = self.csv_f["Image_name"][i]
+    #         image = np.array(PIL.Image.open(os.path.join(self.data_dir, filename + ".png")))
+    #         self.imgs.append(image)
+    #
+    #         # load label
+    #         label = self.class2index[self.csv_f[self.class_key][i]]
+    #         self.labels.append(label)
+
+    def __len__(self):
+        return len(self.csv_f)
+
+    # def __getitem__(self, index):
+    #     if self.transform is not None:
+    #         image = self.transform(self.imgs[index])
+    #     else:
+    #         image = self.imgs[index]
+    #     return image, self.labels[index]
+
+    def __getitem__(self, index):
+        filename = self.csv_f["Image_name"][index]
+        label = self.class2index[self.csv_f[self.class_key][index]]
+        image = PIL.Image.open(os.path.join(self.data_dir, filename + ".png"))
+        if self.transform is not None:
+            image = self.transform(image)
+
+        return image, label
 
 
 

@@ -51,19 +51,37 @@ class HighResCNN(nn.Module):
 
 
 class DenseNet169(nn.Module):
-    def __init__(self, pretrained=True, num_outputs=2):
+    def __init__(self, pretrained=True, num_outputs=2, one_channel=True):
         super(DenseNet169, self).__init__()
         self.dn = torch.hub.load('pytorch/vision:v0.9.0', 'densenet169', pretrained=pretrained)
         self.base = self.dn.features
+        # take avg of weights for input layer #
+        if one_channel:
+            self.squeeze_model_to_one_channel()
+        self.batch_norm = torch.nn.BatchNorm2d(self.dn.classifier.in_features)
         self.classifier = torch.nn.Linear(in_features=self.dn.classifier.in_features, out_features=num_outputs)
 
     def forward(self, x):
         x = self.base(x)
         x = F.relu(x)
         x = F.adaptive_avg_pool2d(x, (1, 1))
+        # x = self.batch_norm(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
+
+    def squeeze_model_to_one_channel(self):
+        squeezed_conv0 = torch.nn.Conv2d(
+            1, self.base[0].out_channels,
+            kernel_size=self.base[0].kernel_size,
+            stride=self.base[0].stride,
+            padding=self.base[0].padding,
+            bias=False)
+
+        squeezed_conv0.weight = torch.nn.Parameter(
+            self.base[0].state_dict()['weight'].sum(axis=1, keepdim=True), requires_grad=True)
+
+        self.base[0] = squeezed_conv0
 
 
 class ResNet18(nn.Module):
@@ -86,8 +104,8 @@ class ResNet18(nn.Module):
 
     def forward(self, x):
         x = self.feature_forward(x)
-        output = self.classifier(x)
-        return output
+        x = self.classifier(x)
+        return x
 
     def feature_forward(self, x):
         x = self.conv1(x)
