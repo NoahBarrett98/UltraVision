@@ -599,6 +599,3 @@ def runSciLearn(label_dir, data_dir, data_name, test_size, resizex, resizey):
         )
         hogSVCClassReport.to_csv("hogsvc_c{0}_deg{1}.csv".format(c, deg))
 
-
-# if __name__ == "__main__":
-#     run()
