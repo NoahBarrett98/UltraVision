@@ -3,52 +3,42 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 
-class HighResCNN(nn.Module):
-    """
-    model built to read in full sized images
-    """
-    def __init__(self, pretrained, num_outputs):
-        super(HighResCNN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=(3,3), stride=(2,2), bias=True)
-        self.pool1 = nn.MaxPool2d(kernel_size= (3,3), stride=(3,3))
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=(3, 3), stride=(2, 2), bias=True)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.conv4 = nn.Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.pool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-        self.conv5 = nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.conv6 = nn.Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.conv7 = nn.Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.pool3 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-        self.conv8 = nn.Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.conv9 = nn.Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.conv10 = nn.Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.pool4 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-        self.conv11 = nn.Conv2d(128, 256, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.conv12 = nn.Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.conv13 = nn.Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), bias=True)
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+def save_model(model, path):
+    torch.save(model.state_dict(), path)
 
-    def forward(self, input):
-        x = self.conv1(input)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.pool2(x)
-        x = self.conv5(x)
-        x = self.conv6(x)
-        x = self.conv7(x)
-        x = self.pool3(x)
-        x = self.conv8(x)
-        x = self.conv9(x)
-        x = self.conv10(x)
-        x = self.pool4(x)
-        x = self.conv11(x)
-        x = self.conv12(x)
-        x = self.conv13(x)
-        x = self.avgpool(x)
-        return x
+def load_base(model, path, num_outputs):
+    """
+    load the base of the model
+    :param model:
+    :param path:
+    :param num_outputs:
+    :return:
+    """
+    model_state = torch.load(path)
+    if isinstance(model_state, tuple):
+        model_state = model_state[0]
+    model.load_state_dict(model_state)
+    # reset classifier to match size of problem at hand
+    try:
+        model.classifier = torch.nn.Linear(in_features=model.dn.classifier.in_features, out_features=num_outputs)
+    except AttributeError:
+        model.classifier = torch.nn.Linear(in_features=model.cin_features, out_features=num_outputs)
+    return model
 
+def freeze_base(model):
+    """
+    Freeze all weights except classsifier and resets weight of classifier
+    """
+    for para in model.parameters():
+        para.requires_grad = False
+    for para in model.classifier.parameters():
+        para.requires_grad = True
+    # randomize the linear classifer # 
+    for layer in model.classifier.modules():
+        if hasattr(layer, 'reset_parameters'):
+            layer.reset_parameters()
+
+    return model
 
 class DenseNet169(nn.Module):
     def __init__(self, pretrained=True, num_outputs=2, one_channel=True):
@@ -58,7 +48,7 @@ class DenseNet169(nn.Module):
         # take avg of weights for input layer #
         if one_channel:
             self.squeeze_model_to_one_channel()
-        self.batch_norm = torch.nn.BatchNorm2d(self.dn.classifier.in_features)
+        # self.batch_norm = torch.nn.BatchNorm2d(self.dn.classifier.in_features)
         self.classifier = torch.nn.Linear(in_features=self.dn.classifier.in_features, out_features=num_outputs)
 
     def forward(self, x):
@@ -125,45 +115,30 @@ class ResNet18(nn.Module):
 
 """
 models.py
-
 Contains the different methods for classification
-
-KNeighbors Classification               (Not Implemented)
-Linear SVC/SVM                          (Not Implemented)
-SVC                                     (Not Implemented)
-HOG-SVM - Stochastic Gradient Descent   (Not Implemented)
+KNeighbors Classification               (Implemented)
+SVC                                     (Implemented)
 """
 
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn import svm
-from sklearn.naive_bayes import GaussianNB
 
 
 # KNearestNeighbors
-def KNN(X_train, Y_train):
-    knn = KNeighborsClassifier()
+def KNN(X_train, Y_train, n):
+    knn = KNeighborsClassifier(n_neighbors=n)
     knn.fit(X_train, Y_train)
     return knn
 
-
 # SVC
 # Images for SVC/SVM must be the same dimensions
-def SVC(X_train, Y_train):
-    svc = svm.SVC(probability=True)
+def SVC(X_train, Y_train, Co, deg):
+    svc = svm.SVC(C=Co, degree=deg, probability=True)
     svc.fit(X_train, Y_train)
     return svc
-
-
-# Gaussian Naive Bayes
-def GNaiveBayes(X_train, Y_train):
-    gnb = GaussianNB()
-    gnb.fit(X_train, Y_train)
-    return gnb
-
 
 # Predict model
 def PredictAndClass(model, X_test, Y_test):
     predictions = model.predict(X_test)
     report = classification_report(Y_test, predictions, output_dict=True)
     return report
-

@@ -1,6 +1,8 @@
 import click
 import torch
 import pandas as pd
+import numpy as np
+import json
 import mlflow
 import os
 from tensorboardX import SummaryWriter
@@ -9,37 +11,37 @@ from ray import tune
 import ray
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
+
+
 from functools import partial
+from sklearn.preprocessing import LabelEncoder
 
 from UltraVision import data
 from UltraVision import models
 from UltraVision import train
 from UltraVision import evaluation
 from UltraVision import optimizers
-from UltraVision import utils
+from UltraVision import CustomTransforms
 
 def run_train_session(label_dir, data_dir, data_name, model_name, train_strategy, use_scheduler, batch_size, val_size, num_epochs,
-        lr, momentum, optimizer_name, writer, loaded_data=None, one_channel=True, checkpoint_dir=None):
+        lr, optimizer_name, writer,
+                      one_channel=True, load_model_from=None, num_outputs_pretrained=2, split_seed = 10, freeze_base=False):
     # preloaded data to prevent reloading
-    if loaded_data:
-        (train_loader, test_loader, val_loader, num_outputs) = ray.get(loaded_data)
-    else:
-        # load data
-        train_loader, test_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir,
+    train_loader, test_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir,
                                                                                           val_size, batch_size,
-                                                                                      one_channel=one_channel)
+                                                                                      one_channel=one_channel,
+                                                                                      split_seed=split_seed)
     # load model
-    model = models.__dict__[model_name](pretrained=True, num_outputs=num_outputs, one_channel=one_channel)
-    model = model.cuda()
-    # get optimizer
-    optimizer = optimizers.__dict__[optimizer_name](model, lr, momentum)
-    # load dir #
-    if checkpoint_dir:
-        model_state, optimizer_state = torch.load(
-            os.path.join(checkpoint_dir, "checkpoint"))
-        model.load_state_dict(model_state)
-        optimizer.load_state_dict(optimizer_state)
+    model = models.__dict__[model_name](pretrained=True, num_outputs=num_outputs_pretrained, one_channel=one_channel)
 
+    # get optimizer
+    optimizer = optimizers.__dict__[optimizer_name](model, lr)
+    # load dir #
+    if load_model_from:
+        model = models.load_base(model, load_model_from, num_outputs)
+    if freeze_base:
+        model = models.freeze_base(model)
+    model = model.cuda()
     # set scheduler
     if use_scheduler:
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[200], gamma=0.5)
@@ -56,23 +58,29 @@ def run_train_session(label_dir, data_dir, data_name, model_name, train_strategy
     val_eval_results = evaluation.evaluate(model, val_loader, train_strategy)
     return test_eval_results, val_eval_results, model
 
+
+
 def run_hparam_search(label_dir, data_dir, data_name,
                       model_name, use_scheduler,
                       batch_size, val_size, one_channel, num_epochs,
-                      optimizer_name, loaded_data, config, checkpoint_dir):
+                      optimizer_name, loaded_data,
+                      use_og_split, normalize_option,
+                      config, checkpoint_dir):
     # preloaded data to prevent reloading
     if loaded_data:
-        (train_loader, test_loader, val_loader, num_outputs) = ray.get(loaded_data)
+        (test_loader, train_loader, val_loader, num_outputs) = ray.get(loaded_data)
     else:
         # load data
-        train_loader, test_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir,
+        test_loader, train_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir,
                                                                                       val_size, batch_size,
-                                                                                      one_channel=one_channel)
+                                                                                      one_channel=one_channel,
+                                                                                      use_og_split=use_og_split,
+                                                                                      normalize_option=normalize_option)
     # load model
     model = models.__dict__[model_name](pretrained=True, num_outputs=num_outputs, one_channel=one_channel)
     model = model.cuda()
     # get optimizer
-    optimizer = optimizers.__dict__[optimizer_name](model, config["lr"], momentum=0.9)
+    optimizer = optimizers.__dict__[optimizer_name](model, config["lr"])
     # load dir #
     if checkpoint_dir:
         model_state, optimizer_state = torch.load(
@@ -109,13 +117,51 @@ def run_hparam_search(label_dir, data_dir, data_name,
             path = os.path.join(checkpoint_dir, "checkpoint")
             torch.save((model.state_dict(), optimizer.state_dict()), path)
     # evaluate model
-    test_eval_results = evaluation.evaluate(model, test_loader, train_strategy="train_classification_tune")
-    # val_eval_results = evaluation.evaluate(model, val_loader, train_strategy="train_classification_tune")
+    # test_eval_results = evaluation.evaluate(model, test_loader, train_strategy="train_classification_tune")
+    val_eval_results = evaluation.evaluate(model, val_loader, train_strategy="train_classification_tune")
 
-    tune.report(loss=test_eval_results["loss"], accuracy=test_eval_results["accuracy"],
-                auc=test_eval_results["auc"]
+    tune.report(loss=val_eval_results["loss"], accuracy=val_eval_results["accuracy"],
+                auc=val_eval_results["auc"]
                 )
 
+@click.command()
+@click.option('--label_dir', default='', help='label location')
+@click.option('--data_dir', default='', help='data folder')
+@click.option('--data_name', default='', help='name of dataset')
+@click.option('--model_name', default='', help='name of model')
+@click.option('--train_strategy', default='train_simclr', help='name of training strategy')
+@click.option('--use_scheduler', default=True, help='whether to use scheduler')
+@click.option('--batch_size', default=8, type=int, help='batch size for dataloaders')
+@click.option('--num_epochs', default=100, type=int, help='number of epochs')
+@click.option('--val_size', default=0.1, type=float, help='validation split size')
+@click.option('--lr', default=0.01, type=float, help='optimizer learning rate')
+@click.option('--optimizer_name', default='Adam', help='optimizer momentum')
+@click.option('--save_results_dir', default=None, type=str, help='path to save model')
+@click.option('--one_channel', default=True, type=bool, help='wether to use 1 or 3 channels for input')
+@click.option('--load_model_from', default=None, type=str, help='load a pretrained model')
+@click.option('--num_outputs_pretrained', default=6, type=int, help='Number of outputs of pretrained model')
+@click.option('--num_bootstraps', default=5, type=int, help='Number of bootstraps')
+@click.option('--freeze_base', default=False, type=bool, help='wether to freeze base for linear classification')
+def train_bootstrap(label_dir, data_dir, data_name, model_name, train_strategy, use_scheduler,
+                   batch_size, val_size, num_epochs, lr, optimizer_name, save_results_dir,
+                   one_channel, load_model_from, num_outputs_pretrained, num_bootstraps, freeze_base):
+        results = {}
+        writer = None
+        for seed in range(num_bootstraps):
+            # train model
+            print(f"TRAINING SEED {seed}:")
+            test_eval_results, val_eval_results, model = run_train_session(label_dir, data_dir, data_name, model_name,
+                                                                           train_strategy, use_scheduler, batch_size, val_size,
+                                                                           num_epochs, lr, optimizer_name, writer, one_channel,
+                                                                           load_model_from, num_outputs_pretrained, split_seed=seed,
+                                                                           freeze_base=freeze_base)
+            results[seed] = {}
+            results[seed]["test"] = test_eval_results
+            results[seed]["val"] = val_eval_results
+
+        if save_results_dir:
+            with open(os.path.join(save_results_dir, "eval_results.json"), "w") as f:
+                json.dump(results, f)
 
 @click.command()
 @click.option('--label_dir', default='', help='label location')
@@ -134,8 +180,10 @@ def run_hparam_search(label_dir, data_dir, data_name,
 @click.option('--tensorboard_name', default=None,type=str, help='wether to use tensorboard or not')
 @click.option('--save_model_dir', default=None, type=str, help='path to save model')
 @click.option('--one_channel', default=True, type=bool, help='wether to use 1 or 3 channels for input')
+@click.option('--load_model_from', default=None, type=str, help='load a pretrained model')
+@click.option('--num_outputs_pretrained', default=2, type=int, help='Number of outputs of pretrained model')
 def train_model(label_dir, data_dir, data_name, model_name, train_strategy, use_scheduler, batch_size, val_size, num_epochs,
-        lr, momentum, optimizer_name, exp_name, tensorboard_name, save_model_dir, one_channel):
+        lr, momentum, optimizer_name, exp_name, tensorboard_name, save_model_dir, one_channel, load_model_from, num_outputs_pretrained):
 
     # setup tensorboard
     if tensorboard_name:
@@ -150,9 +198,9 @@ def train_model(label_dir, data_dir, data_name, model_name, train_strategy, use_
     # setup mlflow experiment
     mlflow.set_experiment(exp_name)
     # train model
-    eval_results, val_eval_results, model = run_train_session(label_dir, data_dir, data_name, model_name, train_strategy, use_scheduler, batch_size, val_size,
+    test_eval_results, val_eval_results, model = run_train_session(label_dir, data_dir, data_name, model_name, train_strategy, use_scheduler, batch_size, val_size,
                                               num_epochs,
-                                              lr, momentum, optimizer_name, writer, one_channel=one_channel)
+                                              lr, momentum, optimizer_name, writer, one_channel, load_model_from, num_outputs_pretrained)
     # mlflow logging
     with mlflow.start_run():
         mlflow.log_param("data_name", data_name)
@@ -166,12 +214,14 @@ def train_model(label_dir, data_dir, data_name, model_name, train_strategy, use_
         mlflow.log_param("momentum", momentum)
         mlflow.log_param("optimizer", optimizer_name)
         mlflow.log_param("tboard loc", tensorboard_location)
-        mlflow.log_metric("auc", eval_results["auc"])
-        mlflow.log_metric("accuracy", eval_results["accuracy"])
+        mlflow.log_metric("val_auc", val_eval_results["auc"])
+        mlflow.log_metric("val_accuracy", val_eval_results["accuracy"])
+        mlflow.log_metric("test_auc", test_eval_results["auc"])
+        mlflow.log_metric("test_accuracy", test_eval_results["accuracy"])
 
     # save model
     if save_model_dir:
-        custom_models.save_model(model, save_model_dir)
+        models.save_model(model, save_model_dir)
         print(f'model saved to: {save_model_dir}')
 
 
@@ -187,9 +237,12 @@ def train_model(label_dir, data_dir, data_name, model_name, train_strategy, use_
 @click.option('--val_size', default=0.1, type=float, help='validation split size')
 @click.option('--one_channel', default=True, type=bool, help='apply avg input layer operation')
 @click.option('--optimizer_name', default='SGD', help='optimizer momentum')
-@click.option('--num_trials', default=10,type=int, help='number of trials')
+@click.option('--num_trials', default=5,type=int, help='number of trials')
+@click.option('--use_og_split', default=True,type=bool, help='use split given by dataset')
+@click.option('--normalize_option', default=None, type=str, help='either "paper", or "custom"')
+@click.option('--save_output_dir', default=None, type=str, help='save results of best trained model')
 def hparam_search_wrapper(label_dir, data_dir, data_name, model_name, use_scheduler, batch_size, num_epochs, val_size,
-                          one_channel, optimizer_name, num_trials):
+                          one_channel, optimizer_name, num_trials, use_og_split, normalize_option, save_output_dir):
     config = {
         "lr": tune.loguniform(1e-4, 1e-1)
     }
@@ -213,7 +266,8 @@ def hparam_search_wrapper(label_dir, data_dir, data_name, model_name, use_schedu
                                       model_name=model_name, use_scheduler=use_scheduler,
                                       batch_size=batch_size, val_size=val_size, 
                                       one_channel=one_channel,  num_epochs=num_epochs,
-                                      optimizer_name=optimizer_name,loaded_data=loaded_data, 
+                                      optimizer_name=optimizer_name,loaded_data=loaded_data,
+                                      use_og_split=use_og_split, normalize_option=normalize_option,
                                       config=config, checkpoint_dir=checkpoint_dir)
     result = tune.run(
         train_func,
@@ -223,47 +277,102 @@ def hparam_search_wrapper(label_dir, data_dir, data_name, model_name, use_schedu
         scheduler=scheduler,
         progress_reporter=reporter
     )
-
+    outcomes = {}
+    outcomes["val"] = {}
     best_trial = result.get_best_trial("loss", "min", "last")
     print("Best trial config: {}".format(best_trial.config))
     print("Best trial final validation loss: {}".format(
         best_trial.last_result["loss"]))
+    outcomes["val"]["loss"] = best_trial.last_result["loss"]
     print("Best trial final validation accuracy: {}".format(
         best_trial.last_result["accuracy"]))
-    # print("Best trial final validation auc: {}".format(
-    #     best_trial.last_result["auc"]))
+    outcomes["val"]["accuracy"] = best_trial.last_result["accuracy"]
+    print("Best trial final validation auc: {}".format(
+        best_trial.last_result["auc"]))
+    outcomes["val"]["auc"] = best_trial.last_result["auc"]
+
+    # load data
+    train_loader, test_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir,
+                                                                                      val_size, batch_size,
+                                                                                      one_channel=one_channel,
+                                                                                      use_og_split=use_og_split,
+                                                                                      normalize_option=normalize_option)
+    # load model
+    best_trained_model = models.__dict__[model_name](pretrained=True, num_outputs=num_outputs, one_channel=one_channel)
+    # get best ckpt
+    best_checkpoint_dir = best_trial.checkpoint.value
+    model_state, optimizer_state = torch.load(os.path.join(
+        best_checkpoint_dir, "checkpoint"))
+
+    best_trained_model.load_state_dict(model_state)
+    best_trained_model = best_trained_model.cuda()
+
+    outcomes["test"] = evaluation.evaluate(best_trained_model, test_loader, train_strategy="train_classification_tune")
+    print(f"Best trial test set accuracy: {outcomes['test']['accuracy']}, auc {outcomes['test']['auc']}, loss {outcomes['test']['loss']}")
+    if save_output_dir:
+        with open(os.path.join(save_output_dir, f"best_results_{str(normalize_option)}.json"), "w") as f:
+            json.dump(outcomes, f)
+        torch.save(best_trained_model.state_dict(), os.path.join(save_output_dir, f"model_{str(normalize_option)}.pt"))
+
 
 @click.command()
 @click.option('--label_dir', default='', help='label location')
 @click.option('--data_dir', default='', help='data folder')
 @click.option('--data_name', default='', help='name of dataset')
-@click.option('--testSize', default=0.1, type=float, help='percentage to be used for test set')
-@click.option('--resizeX', default=224, type=int, help='SHAPE OF X RESIZE')
-@click.option('--resizeY', default=224, type=int, help='shape of y resize')
-def runSciLearn(label_dir, data_dir, data_name, testSize, resizeX, resizeY):
+@click.option('--test_size', default=0.1, type=float, help='percentage to be used for test set')
+@click.option('--resizex', default=224, type=int, help='SHAPE OF X RESIZE')
+@click.option('--resizey', default=224, type=int, help='shape of y resize')
+def runSciLearn(label_dir, data_dir, data_name, test_size, resizex, resizey):
     channels = 3  # RGB
     imagenames, imagelocs, imagearrays, planesout, X_test, X_train, X_val, Y_train, Y_test, Y_val = data.FetalPlanes_numpy(
-        label_dir, data_dir, testSize)
+        label_dir, data_dir, test_size)
 
-    X_train = CustomTransforms.NP_Resize(X_train, resizeX, resizeY, channels)
-    X_test = CustomTransforms.NP_Resize(X_test, resizeX, resizeY, channels)
-    Y_train = CustomTransforms.NP_Resize(Y_train, resizeX, resizeY, channels)
-    Y_test = CustomTransforms.NP_Resize(Y_test, resizeX, resizeY, channels)
+    X_train = CustomTransforms.NP_Resize(X_train, resizex, resizey, channels)
+    X_test = CustomTransforms.NP_Resize(X_test, resizex, resizey, channels)
 
-    X_train = CustomTransforms.NP_GrayScale(X_train)
-    X_test = CustomTransforms.NP_GrayScale(X_test)
-    Y_train = CustomTransforms.NP_GrayScale(Y_train)
-    Y_test = CustomTransforms.NP_GrayScale(Y_test)
+    X_train = CustomTransforms.NP_GreyScale(X_train)
+    X_test = CustomTransforms.NP_GreyScale(X_test)
 
-    knn = models.KNN(X_train, Y_train)
-    svc = models.SVC(X_train, Y_train)
-    gnb = models.GNaiveBayes(X_train, Y_train)
+    hogX_train = X_train
+    hogX_test = X_test
 
-    knnClassReport = p.dataFrame(models.PredictAndClass(knn, X_test, Y_test))
-    svcClassReport = p.dataFrame(models.PredictAndClass(svc, X_test, Y_test))
-    gnbClassReport = p.dataFrame(models.PredictAndClass(gnb, X_test, Y_test))
+    X_train = CustomTransforms.NP_LineImage(X_train)
+    X_test = CustomTransforms.NP_LineImage(X_test)
 
-    pass
+    hogX_train = CustomTransforms.hogTransform(hogX_train)
+    hogX_test = CustomTransforms.hogTransform(hogX_test)
 
+    #Label encode data
+    le = LabelEncoder()
+    le.fit(Y_train)
+    le.transform(Y_train)
+    le.transform(Y_test)
+
+    # nearest = [1, 3, 5, 9, 13, 19, 25, 33, 41, 51, 61, 73, 85, 99]
+    # for n in nearest:
+    #     print("Calculating knn for N={0}".format(n))
+    #     knn = models.KNN(X_train, Y_train, n)
+    #     knnClassReport = pd.DataFrame(models.PredictAndClass(knn, X_test, Y_test))
+    #     knnClassReport.to_csv('knn_n{0}.csv'.format(n))
+
+    """    
+    #Unused gridsearch for HOGSVM; duration of the simulation would exceed 8 hours at too low step size.
+    cValue = np.logspace(-1,2, num=13)
+    gValue = np.logspace(-1,1, num=9)
+    param_grid = {'C': cValue, 'gamma': gValue, 'kernel': ['rbf']}
+    grid = GridSearchCV(svm.SVC(), param_grid, refit=True, verbose=3)
+    grid.fit(hogX_train, Y_train)
+    print(grid.best_params_)
+    print(grid.best_estimator_)
+    grid_predictions = grid.predict(hogX_test)
+    print(classification_report(Y_test, grid_predictions))
+    """
+
+    for c in np.logspace(-1, 2, num=13):
+        deg = 3 #No impact on fetal plane dataset.
+        print("Calculating HOG SVC for C={0} and degree={1}".format(c, deg))
+        hogSVC = models.SVC(hogX_test, Y_test, c, deg)
+        hogSVCClassReport = pd.DataFrame(models.PredictAndClass(hogSVC, hogX_train, Y_train))
+        hogSVCClassReport.to_csv('hogsvc_c{0}_deg{1}.csv'.format(c, deg))
 # if __name__ == "__main__":
 #     run()

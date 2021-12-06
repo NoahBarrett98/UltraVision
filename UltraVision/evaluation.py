@@ -105,24 +105,32 @@ def evaluate_classification_tune(model, test_loader):
 @click.option('--checkpoint_num', default=14, type=int, help='checkpoint number to load')
 @click.option('--model_name', default='', help='name of model')
 @click.option('--save_results', default=None, help='location to save results')
-def evaluate_tuned_models(label_dir, data_dir, data_name,val_size, checkpoint_dir,checkpoint_num, model_name, save_results):
+@click.option('--use_og_split', default=True,type=bool, help='use split given by dataset')
+@click.option('--normalize_option', default=None, type=str, help='either "paper", or "custom"')
+@click.option('--one_channel', default=True, type=bool, help='apply avg input layer operation')
+def evaluate_tuned_models(label_dir, data_dir, data_name,val_size, checkpoint_dir,checkpoint_num, model_name, save_results,
+                          use_og_split, normalize_option, one_channel):
     # load data #
     train_loader, test_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir,
                                                                                   val_size, batch_size=32,
-                                                                                  one_channel=False)
+                                                                                  one_channel=one_channel,
+                                                                                  use_og_split=use_og_split,
+                                                                                  normalize_option=normalize_option)
     # load model
-    model = models.__dict__[model_name](pretrained=False, num_outputs=num_outputs, one_channel=False)
+    model = models.__dict__[model_name](pretrained=False, num_outputs=num_outputs, one_channel=one_channel)
     model = model.cuda()
     outcomes = {}
     outcomes_list = []
     training_seshes = glob.glob(os.path.join(checkpoint_dir, "*/"))
     for i, train in enumerate(training_seshes):
-        checkpoint = os.path.join(train,
-                                  f"checkpoint_{''.join(['0' for _ in range(6 - len(str(checkpoint_num)))] + [str(checkpoint_num)])}",
-                                  "checkpoint")
-        model_state, _ = torch.load(checkpoint)
-        model.load_state_dict(model_state)
-
+        try:
+            checkpoint = os.path.join(train,
+                                      f"checkpoint_{''.join(['0' for _ in range(6 - len(str(checkpoint_num)))] + [str(checkpoint_num)])}",
+                                      "checkpoint")
+            model_state, _ = torch.load(checkpoint)
+            model.load_state_dict(model_state)
+        except:
+            continue
         outcomes[i] = {}
         outcomes[i]["test"] = evaluate_classification(model, test_loader)
         outcomes_list.append([i, "test", outcomes[i]["test"]["loss"],
@@ -139,16 +147,61 @@ def evaluate_tuned_models(label_dir, data_dir, data_name,val_size, checkpoint_di
 
 
     if save_results:
-        with open(os.path.join(save_results, "eval_results.json"), "w") as f:
+        with open(os.path.join(save_results, f"eval_results_{str(normalize_option)}.json"), "w") as f:
             json.dump(outcomes, f)
         df = pd.DataFrame(outcomes_list, columns=["train_num", "data_split", "loss", "auc", "accuracy"])
-        df.to_csv(os.path.join(save_results, "eval_results.csv"))
+        df.to_csv(os.path.join(save_results, f"eval_results_{str(normalize_option)}.csv"))
 
 
+@click.command()
+@click.option('--label_dir', default='', help='label location')
+@click.option('--data_dir', default='', help='data folder')
+@click.option('--data_name', default='', help='name of dataset')
+@click.option('--val_size', default=0.1, type=float, help='size of validation set')
+@click.option('--checkpoint', default='', help='path to check point')
+@click.option('--model_name', default='', help='name of model')
+@click.option('--save_results', default=None, help='location to save results')
+@click.option('--use_og_split', default=True,type=bool, help='use split given by dataset')
+@click.option('--normalize_option', default=None, type=str, help='either "paper", or "custom"')
+@click.option('--one_channel', default=True, type=bool, help='apply avg input layer operation')
+def evaluate_model(label_dir, data_dir, data_name,val_size, checkpoint, model_name, save_results,
+                          use_og_split, normalize_option, one_channel):
+    # load data #
+    train_loader, test_loader, val_loader, num_outputs = data.__dict__[data_name](label_dir, data_dir,
+                                                                                  val_size, batch_size=32,
+                                                                                  one_channel=one_channel,
+                                                                                  use_og_split=use_og_split,
+                                                                                  normalize_option=normalize_option)
+    # load model
+    model = models.__dict__[model_name](pretrained=False, num_outputs=num_outputs, one_channel=one_channel)
+    model_state = torch.load(checkpoint)
+    model.load_state_dict(model_state)
+    model = model.cuda()
+    outcomes = {}
+    outcomes_list = []
 
-def evaluate_simclr(model, test_loader):
-    # to be implemented
-    raise NotImplementedError
+
+    outcomes["test"] = evaluate_classification_tune(model, test_loader)
+    outcomes_list.append(["test", outcomes["test"]["loss"],
+                                      outcomes["test"]["auc"],
+                                      outcomes["test"]["accuracy"]])
+    outcomes["train"] = evaluate_classification_tune(model, train_loader)
+    outcomes_list.append(["train", outcomes["test"]["loss"],
+                          outcomes["test"]["auc"],
+                          outcomes["test"]["accuracy"]])
+    outcomes["validation"] = evaluate_classification_tune(model, val_loader)
+    outcomes_list.append(["validation", outcomes["test"]["loss"],
+                          outcomes["test"]["auc"],
+                          outcomes["test"]["accuracy"]])
+
+
+    if save_results:
+        with open(os.path.join(save_results, f"eval_results_{str(normalize_option)}.json"), "w") as f:
+            json.dump(outcomes, f)
+        df = pd.DataFrame(outcomes_list, columns=["data_split", "loss", "auc", "accuracy"])
+        df.to_csv(os.path.join(save_results, f"eval_results_{str(normalize_option)}.csv"))
+
+
 
 
 

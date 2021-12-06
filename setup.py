@@ -33,8 +33,10 @@ setup(name='UltraVision',
           'console_scripts': [
                 'train_model = UltraVision.main:train_model',
                 'train_baselines = UltraVision.main:runSciLearn',
+                'train_bootstrap = UltraVision.main:train_bootstrap',
                 'hparam_search = UltraVision.main:hparam_search_wrapper',
-                'evaluate_tuned_models = UltraVision.evaluation:evaluate_tuned_models'
+                'evaluate_tuned_models = UltraVision.evaluation:evaluate_tuned_models',
+                'evaluate_model = UltraVision.evaluation:evaluate_model'
           ]
       }
 )

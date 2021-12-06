@@ -14,22 +14,31 @@ conda install protobuf
 
 ## running experiment
 
-Example of running experiment
+Example of running experiment: train simcl
 ```
-train_model --label_dir /data/FETAL_PLANES_ZENODO/FETAL_PLANES_DB_data.csv \
-               --data_dir /data/FETAL_PLANES_ZENODO/Images \
+train_bootstrap --label_dir data/FETAL_PLANES_DB_data.csv \
+               --data_dir data/Images \
                --data_name FetalPlanes \
-               --model ResNet18 \
+               --model_name DenseNet169 \
                --train_strategy train_classification \
-               --use_scheduler True \
-               --batch_size 1 \
-               --num_epochs  1 \
+               --use_scheduler False \
+               --batch_size 32 \
+               --train_strategy train_classification \
+               --num_epochs  15 \
+               --val_size 0.1 \
+               --lr 0.00828149 \
                --optimizer_name SGD \
-               --lr 0.0002 \
-               --momentum 0.9 \
-               --exp_name testing \
-               --use_tensorboard True
+               --one_channel False \
+               --save_results_dir UltraVision/experiments/transfer_self_supervised_to_classification \
+               --num_bootstraps 5 \
+               --freeze_base False
 ```
+
+## Reproducibility of Results
+
+All experiments discussed in report can be found in the UltraVision/experiments directory. The default seeds in the code 
+are what were used in the experiments. 
+
 
 ## Tracking Experiments
 
