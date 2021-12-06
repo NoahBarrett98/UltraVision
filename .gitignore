@@ -1,0 +1,7 @@
+/UltraVision/__pycache__/
+/UltraVision/UltraVision.egg-info/
+/UltraVision/mlruns/
+/UltraVision/tensorboard/
+tensorboard/
+mlruns/
+UltraVision.egg-info/
