@@ -3,10 +3,12 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import os
+
 sns.set_theme()
 """
 utils - mostly for visualization
 """
+
 
 def parse_results_to_list(string, expname):
     results = []
@@ -15,23 +17,27 @@ def parse_results_to_list(string, expname):
             results.append(float(s))
         except ValueError:
             continue
-    results = [results[pos:pos + 5] for pos in range(0, len(results), 5)]
+    results = [results[pos : pos + 5] for pos in range(0, len(results), 5)]
     for i, r in enumerate(results):
         results[i] = r + [expname]
     return results
+
 
 def final_results(json_f, out_dir):
     with open(json_f, "r") as f:
         final_results = json.load(f)
     total_results = []
     for k in final_results:
-        total_results+= parse_results_to_list(final_results[k], k)
+        total_results += parse_results_to_list(final_results[k], k)
 
-
-    df = pd.DataFrame(total_results, columns=["lr", "loss", "accuracy", "auc", "training_iteration", "experiment"])
+    df = pd.DataFrame(
+        total_results,
+        columns=["lr", "loss", "accuracy", "auc", "training_iteration", "experiment"],
+    )
     df = df.drop(columns=["training_iteration"])
     df.to_csv(out_dir)
     return df
+
 
 def barplot(csv_dir, out_img):
     df = pd.read_csv(csv_dir)
@@ -39,10 +45,10 @@ def barplot(csv_dir, out_img):
     print(df.to_markdown())
     df = df.drop(columns=["lr", "loss"])
     df = pd.melt(df, id_vars=["experiment"], value_vars=["accuracy", "auc"])
-    sns.boxplot(x="experiment", y="value", hue="variable",
-                data=df)
+    sns.boxplot(x="experiment", y="value", hue="variable", data=df)
     plt.suptitle("Result of Hyper-Parameter Search")
     plt.savefig(out_img)
+
 
 def visualize_best_models(json_f, save_dir):
     with open(json_f, "r") as f:
@@ -53,16 +59,23 @@ def visualize_best_models(json_f, save_dir):
             for split in data[exp][conf]:
                 for metric, value in data[exp][conf][split].items():
                     outcome.append([f"{exp}_{conf}", split, metric, value])
-    data = pd.DataFrame(outcome, columns = ["experiment", "split", "metric", "value"])
+    data = pd.DataFrame(outcome, columns=["experiment", "split", "metric", "value"])
     data = data[data["experiment"].isin(["train_split_custom", "random_split_custom"])]
-    import pdb;pdb.set_trace()
-    sns.barplot(x="metric", y="value", hue="experiment", data=data[data["split"] == "test"])
+    import pdb
+
+    pdb.set_trace()
+    sns.barplot(
+        x="metric", y="value", hue="experiment", data=data[data["split"] == "test"]
+    )
     plt.suptitle("Best Test Results from Hyper Parameter Search")
     plt.savefig(os.path.join(save_dir, "test_barplot.png"))
     plt.clf()
-    sns.barplot(x="metric", y="value", hue="experiment", data=data[data["split"] == "val"])
+    sns.barplot(
+        x="metric", y="value", hue="experiment", data=data[data["split"] == "val"]
+    )
     plt.suptitle("Best Val Results from Hyper Parameter Search")
     plt.savefig(os.path.join(save_dir, "val_barplot.png"))
+
 
 def vis_bootstrap(json_files, save_dir):
     data = []
@@ -72,9 +85,19 @@ def vis_bootstrap(json_files, save_dir):
             bootstrap = json.load(f)
         for seed in bootstrap:
             for split in bootstrap[seed]:
-                data.append([exp_name, split, bootstrap[seed][split]['accuracy'], bootstrap[seed][split]['auc'], bootstrap[seed][split]['loss']])
-    df = pd.DataFrame(data, columns = ["experiment", "split", "accuracy", "auc", "loss"])
-    import pdb;pdb.set_trace()
+                data.append(
+                    [
+                        exp_name,
+                        split,
+                        bootstrap[seed][split]["accuracy"],
+                        bootstrap[seed][split]["auc"],
+                        bootstrap[seed][split]["loss"],
+                    ]
+                )
+    df = pd.DataFrame(data, columns=["experiment", "split", "accuracy", "auc", "loss"])
+    import pdb
+
+    pdb.set_trace()
     df = df.drop(columns=["loss"])
     df = pd.melt(df, id_vars=["experiment", "split"], value_vars=["accuracy", "auc"])
     print(df)
@@ -89,20 +112,20 @@ def vis_bootstrap(json_files, save_dir):
 
 
 # if __name__ == "__main__":
-    # json_f = "/home/noah/UltraVision/experiments/hparam_search_dnet/final_results.json"
-    # out_dir = "/home/noah/UltraVision/experiments/hparam_search_dnet/final_results.csv"
-    # final_results(json_f, out_dir)
-    # out_img = "/home/noah/UltraVision/experiments/hparam_search_dnet/barplot.png"
-    # csv_dir = "/home/noah/UltraVision/experiments/hparam_search_dnet/final_results.csv"
-    # boxplot(csv_dir, out_img)
-    # json_f = "/home/noah/UltraVision/experiments/hparam_search_dnet/evaluation_results.json"
-    # save_dir = "/home/noah/UltraVision/experiments/hparam_search_dnet"
-    # visualize_best_models(json_f,save_dir)
-    # json_files = [
-    #                 "/home/noah/UltraVision/experiments/transfer_self_supervised_to_classification/eval_results.json"
-    #                 #"/home/noah/UltraVision/experiments/linear_classification/simclr/eval_results.json",]
-    #               # "/home/noah/UltraVision/experiments/linear_classification/simclr_rerun/eval_results.json"
-    #               # ]
-    #     ]
-    # save_dir = "/home/noah/UltraVision/experiments/transfer_self_supervised_to_classification"
-    # vis_bootstrap(json_files, save_dir)
+# json_f = "/home/noah/UltraVision/experiments/hparam_search_dnet/final_results.json"
+# out_dir = "/home/noah/UltraVision/experiments/hparam_search_dnet/final_results.csv"
+# final_results(json_f, out_dir)
+# out_img = "/home/noah/UltraVision/experiments/hparam_search_dnet/barplot.png"
+# csv_dir = "/home/noah/UltraVision/experiments/hparam_search_dnet/final_results.csv"
+# boxplot(csv_dir, out_img)
+# json_f = "/home/noah/UltraVision/experiments/hparam_search_dnet/evaluation_results.json"
+# save_dir = "/home/noah/UltraVision/experiments/hparam_search_dnet"
+# visualize_best_models(json_f,save_dir)
+# json_files = [
+#                 "/home/noah/UltraVision/experiments/transfer_self_supervised_to_classification/eval_results.json"
+#                 #"/home/noah/UltraVision/experiments/linear_classification/simclr/eval_results.json",]
+#               # "/home/noah/UltraVision/experiments/linear_classification/simclr_rerun/eval_results.json"
+#               # ]
+#     ]
+# save_dir = "/home/noah/UltraVision/experiments/transfer_self_supervised_to_classification"
+# vis_bootstrap(json_files, save_dir)

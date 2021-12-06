@@ -17,7 +17,9 @@ class FetalPlaneDataset(Dataset):
     def __init__(self):
         # finding the image and xlsx directories
         directorycsv = r"C:\Users\conno\ML_Scripts\ML_Project\FETAL_PLANES_ZENODO"
-        directoryimg = r"C:\Users\conno\ML_Scripts\ML_Project\FETAL_PLANES_ZENODO\Images"
+        directoryimg = (
+            r"C:\Users\conno\ML_Scripts\ML_Project\FETAL_PLANES_ZENODO\Images"
+        )
         xlsx = "FETAL_PLANES_DB_data.xlsx"
         xlsxloc = os.path.join(directorycsv, xlsx)
 
@@ -33,11 +35,11 @@ class FetalPlaneDataset(Dataset):
         # This loop is iterating through the dataframe to find the correct image and plane output then store the image data
         # numpy array in another array (imagearrays). Also storing the corresponding plane to the planesout array.
         for i, rows in df.iterrows():
-            imgname = df.at[i, 'Image_name'] + '.png'
+            imgname = df.at[i, "Image_name"] + ".png"
             imgloc = os.path.join(directoryimg, imgname)
             img = Image.open(imgloc)
             array = np.asarray(img)
-            plane = df.at[i, 'Plane']
+            plane = df.at[i, "Plane"]
             output = np.asarray(plane)
             imagenames.append(imgname)
             imagelocs.append(imgloc)
@@ -55,4 +57,5 @@ class FetalPlaneDataset(Dataset):
     def __len__(self):
         return self.len
 
-print('dont')
+
+print("dont")

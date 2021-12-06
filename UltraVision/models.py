@@ -3,8 +3,10 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 
+
 def save_model(model, path):
     torch.save(model.state_dict(), path)
+
 
 def load_base(model, path, num_outputs):
     """
@@ -20,10 +22,15 @@ def load_base(model, path, num_outputs):
     model.load_state_dict(model_state)
     # reset classifier to match size of problem at hand
     try:
-        model.classifier = torch.nn.Linear(in_features=model.dn.classifier.in_features, out_features=num_outputs)
+        model.classifier = torch.nn.Linear(
+            in_features=model.dn.classifier.in_features, out_features=num_outputs
+        )
     except AttributeError:
-        model.classifier = torch.nn.Linear(in_features=model.cin_features, out_features=num_outputs)
+        model.classifier = torch.nn.Linear(
+            in_features=model.cin_features, out_features=num_outputs
+        )
     return model
+
 
 def freeze_base(model):
     """
@@ -33,23 +40,28 @@ def freeze_base(model):
         para.requires_grad = False
     for para in model.classifier.parameters():
         para.requires_grad = True
-    # randomize the linear classifer # 
+    # randomize the linear classifer #
     for layer in model.classifier.modules():
-        if hasattr(layer, 'reset_parameters'):
+        if hasattr(layer, "reset_parameters"):
             layer.reset_parameters()
 
     return model
 
+
 class DenseNet169(nn.Module):
     def __init__(self, pretrained=True, num_outputs=2, one_channel=True):
         super(DenseNet169, self).__init__()
-        self.dn = torch.hub.load('pytorch/vision:v0.9.0', 'densenet169', pretrained=pretrained)
+        self.dn = torch.hub.load(
+            "pytorch/vision:v0.9.0", "densenet169", pretrained=pretrained
+        )
         self.base = self.dn.features
         # take avg of weights for input layer #
         if one_channel:
             self.squeeze_model_to_one_channel()
         # self.batch_norm = torch.nn.BatchNorm2d(self.dn.classifier.in_features)
-        self.classifier = torch.nn.Linear(in_features=self.dn.classifier.in_features, out_features=num_outputs)
+        self.classifier = torch.nn.Linear(
+            in_features=self.dn.classifier.in_features, out_features=num_outputs
+        )
 
     def forward(self, x):
         x = self.base(x)
@@ -62,14 +74,18 @@ class DenseNet169(nn.Module):
 
     def squeeze_model_to_one_channel(self):
         squeezed_conv0 = torch.nn.Conv2d(
-            1, self.base[0].out_channels,
+            1,
+            self.base[0].out_channels,
             kernel_size=self.base[0].kernel_size,
             stride=self.base[0].stride,
             padding=self.base[0].padding,
-            bias=False)
+            bias=False,
+        )
 
         squeezed_conv0.weight = torch.nn.Parameter(
-            self.base[0].state_dict()['weight'].sum(axis=1, keepdim=True), requires_grad=True)
+            self.base[0].state_dict()["weight"].sum(axis=1, keepdim=True),
+            requires_grad=True,
+        )
 
         self.base[0] = squeezed_conv0
 
@@ -113,6 +129,7 @@ class ResNet18(nn.Module):
     def feature_dim(self):
         return self.__in_features
 
+
 """
 models.py
 Contains the different methods for classification
@@ -130,12 +147,14 @@ def KNN(X_train, Y_train, n):
     knn.fit(X_train, Y_train)
     return knn
 
+
 # SVC
 # Images for SVC/SVM must be the same dimensions
 def SVC(X_train, Y_train, Co, deg):
     svc = svm.SVC(C=Co, degree=deg, probability=True)
     svc.fit(X_train, Y_train)
     return svc
+
 
 # Predict model
 def PredictAndClass(model, X_test, Y_test):
