@@ -110,22 +110,3 @@ def vis_bootstrap(json_files, save_dir):
     plt.suptitle("Linear Classification Proxy Method on Validation Set")
     plt.savefig(os.path.join(save_dir, "val_boxplot.png"))
 
-
-# if __name__ == "__main__":
-# json_f = "/home/noah/UltraVision/experiments/hparam_search_dnet/final_results.json"
-# out_dir = "/home/noah/UltraVision/experiments/hparam_search_dnet/final_results.csv"
-# final_results(json_f, out_dir)
-# out_img = "/home/noah/UltraVision/experiments/hparam_search_dnet/barplot.png"
-# csv_dir = "/home/noah/UltraVision/experiments/hparam_search_dnet/final_results.csv"
-# boxplot(csv_dir, out_img)
-# json_f = "/home/noah/UltraVision/experiments/hparam_search_dnet/evaluation_results.json"
-# save_dir = "/home/noah/UltraVision/experiments/hparam_search_dnet"
-# visualize_best_models(json_f,save_dir)
-# json_files = [
-#                 "/home/noah/UltraVision/experiments/transfer_self_supervised_to_classification/eval_results.json"
-#                 #"/home/noah/UltraVision/experiments/linear_classification/simclr/eval_results.json",]
-#               # "/home/noah/UltraVision/experiments/linear_classification/simclr_rerun/eval_results.json"
-#               # ]
-#     ]
-# save_dir = "/home/noah/UltraVision/experiments/transfer_self_supervised_to_classification"
-# vis_bootstrap(json_files, save_dir)
