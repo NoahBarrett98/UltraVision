@@ -95,9 +95,6 @@ def vis_bootstrap(json_files, save_dir):
                     ]
                 )
     df = pd.DataFrame(data, columns=["experiment", "split", "accuracy", "auc", "loss"])
-    import pdb
-
-    pdb.set_trace()
     df = df.drop(columns=["loss"])
     df = pd.melt(df, id_vars=["experiment", "split"], value_vars=["accuracy", "auc"])
     print(df)
